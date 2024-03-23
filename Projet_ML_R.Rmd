@@ -1,0 +1,558 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+```{r}
+library(plotly)
+library(dplyr)
+library(corrplot)
+library(ggplot2)
+library(factoextra)
+library(FactoMineR)
+library(gridExtra)
+ 
+```
+
+
+```{r}
+#QUESTION 1
+
+
+data <- read.csv("global-data-on-sustainable-energy (1).csv", header = TRUE)
+head(data)
+```
+```{r}
+#On affiche les types des variables
+str(data)
+```
+```{r}
+summary(data)
+```
+
+```{r}
+#On transforme la variable Year en qualitative
+data$Year <- as.factor(data$Year)
+class(data$Year)
+
+```
+
+```{r}
+#On transforme la densité en variable numérique
+data$Density.n.P.Km2.<-as.numeric(gsub(",","",data$Density.n.P.Km2.))
+class(data$Density.n.P.Km2.)
+
+
+```
+
+
+```{r}
+#On vérifie qu'on a les bons types 
+str(data)
+```
+```{r}
+#QUESTION 2
+
+
+#Afficher le nombre de valeurs manquantes par variables
+
+données_manquantes <- colSums(is.na(data))
+print(données_manquantes)
+```
+
+```{r}
+fig <- plot_ly(x = names(données_manquantes), y = données_manquantes, type = "bar", 
+               name = "Valeurs manquantes par variables", 
+               marker = list(color = "purple"),
+               xlab = "Variables", ylab = "Nombre de valeurs manquantes",
+               title = "Valeurs manquantes par variables")
+
+fig
+```
+
+```{r}
+#On récupère le nom complet des variables
+names(data)
+```
+```{r}
+#On supprime les variables comportant un taux de données manquantes très important
+
+data2 <- subset(data, select = -c(Renewable.electricity.generating.capacity.per.capita, Financial.flows.to.developing.countries..US..., Renewables....equivalent.primary.energy.))
+
+```
+
+
+```{r}
+#On vérifie que data2 a bien les 3 variables précédentes en moins
+
+names(data2)
+```
+
+
+```{r}
+#QUESTION 3
+
+# On créée un nouveau jeu de données comportant seulement les individus sans valeurs manquantes
+
+data_sans_val_manquantes <- data2[complete.cases(data2), ]
+
+```
+
+
+```{r}
+#On vérifie qu'on a bien 2868 observations dans le jeu de données complet
+
+nrow(data_sans_val_manquantes)
+
+```
+
+```{r}
+#QUESTION 4
+
+library(ggplot2)
+
+ggplot(data_sans_val_manquantes, aes(y = `Access.to.electricity....of.population.`)) +
+  geom_boxplot(fill = "blue") +
+  labs(title = "Boîte à moustaches pour Access-to-electricity")
+
+```
+```{r}
+
+data3 <- data_sans_val_manquantes
+
+# Autre type d'analyse descriptive de variable qualitative
+
+ggplot(data3, aes(x = `Electricity.from.fossil.fuels..TWh.`)) +
+  geom_histogram(binwidth = 50, fill = "blue", color = "black") +
+  labs(title = "Electricity-from-fossil-fuels",
+       x = "Electricity-from-fossil-fuels (TWh)",
+       y = "Fréquence") +
+  theme_minimal()
+
+# Nous remarquons que cette variable possède bcp de données entre 0 et 500 TWh
+```
+```{r}
+#ggplot(data3, aes(x = `Electricity.from.fossil.fuels..TWh.`)) +
+ # geom_density(fill = "skyblue", alpha = 0.5) +
+  #labs(title = "Densité de Electricity-from-fossil-fuels")
+```
+
+
+```{r}
+ggplot(data3, aes(x = `Access.to.clean.fuels.for.cooking`)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  labs(title = "Densité de Access.to.clean.fuels.for.cooking")
+```
+```{r}
+
+# Tracer le graphique de densité
+ggplot(data3, aes(x=`Primary.energy.consumption.per.capita..kWh.person.`)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  labs(title = "The density of Primary energy consumption per capita (kWh/person)")
+
+```
+
+
+
+```{r}
+#On applique une transformation logarithmique à cette variable
+
+data3$Primary_energy_consumption_per_capita_new <- log(data3$Primary.energy.consumption.per.capita..kWh.person.)
+
+#On supprime la variable sans transformation
+
+data3 <- subset(data3, select = -c(Primary.energy.consumption.per.capita..kWh.person.))
+
+
+
+```
+
+
+```{r}
+#On affiche la nouvelle densité :
+ggplot(data3, aes(x=`Primary_energy_consumption_per_capita_new`)) +
+  geom_density(fill = "blue", alpha = 0.5) +
+  labs(title = "The density of Primary energy consumption per capita new (kWh/person)")
+```
+```{r}
+#Nous avons bien effectué notre transformation logarithmique sur la variable "Primary.energy.consumption.per.capita..kWh.person.".
+```
+
+
+
+```{r}
+#QUESTION 5
+
+
+#On renomme la colonne "Value_co2_emissions_kt_by_country_new" en "CO2" 
+data3 <- data3 %>%
+  rename(CO2 = Value_co2_emissions_kt_by_country)
+
+
+```
+
+```{r}
+#On vérifie :
+names(data3)
+```
+
+
+```{r}
+
+#Nous pouvons observer les émissions de CO2 par pays
+
+ggplot(data3, aes(x = Entity, y = CO2)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  labs(title = "Émissions de CO2 par pays",
+       x = "Pays",
+       y = "Émissions de CO2 (en tonnes)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+#Légende difficile à lire mais on voit une hétérogénéité entre les pays
+```
+
+```{r}
+#On veut mtn voir les 5 pays les plus emetteurs en CO2:
+
+
+#On calcule les émissions maximales de CO2 par pays
+CO2_max <- data3 %>%
+  group_by(Entity) %>%
+  summarise(CO2 = max(CO2)) %>%
+  arrange(desc(CO2)) %>%
+  head(5)
+
+ggplot(CO2_max, aes(x = reorder(Entity, CO2), y = CO2, fill = CO2)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Top 5 des pays ayant émis le plus de CO2",
+       x = "Pays",
+       y = "Émissions de CO2",
+       fill = "Émissions de CO2") +
+  scale_fill_gradient(low = "blue", high = "yellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotation des noms de pays sur l'axe x
+
+```
+```{r}
+#QUESTION 6
+str(data3)
+names(data3)
+```
+```{r}
+
+
+# On renomme les colonnes du dataframe 3
+data4 <- data3 %>%
+  rename(Access_to_electricity = Access.to.electricity....of.population.,
+         Access_to_clean_fuels_for_cooking = Access.to.clean.fuels.for.cooking,
+         Renewable_energy_share_in_the_total_final_energy_consumption = Renewable.energy.share.in.the.total.final.energy.consumption....,
+         Electricity_from_fossil_fuels = Electricity.from.fossil.fuels..TWh.,
+         Electricity_from_nuclear = Electricity.from.nuclear..TWh.,
+         Electricity_from_renewables = Electricity.from.renewables..TWh.,
+         Low_carbon_electricity = Low.carbon.electricity....electricity.,
+         Energy_intensity_level_of_primary_energy = Energy.intensity.level.of.primary.energy..MJ..2017.PPP.GDP.,
+         Density_n_P_Km2 = Density.n.P.Km2.,
+         Land_Area = Land.Area.Km2.)
+
+names(data4)
+
+```
+```{r}
+# On convertit la variable "Land-Area" qui est en entier en réel
+data4 <- data4 %>%
+  mutate(Land_Area = as.numeric(Land_Area))
+str(data4)
+```
+
+
+```{r}
+
+
+cols <- c('Access_to_electricity',
+          'Access_to_clean_fuels_for_cooking',
+          'Renewable_energy_share_in_the_total_final_energy_consumption',
+          'Electricity_from_fossil_fuels',
+          'Electricity_from_nuclear',
+          'Electricity_from_renewables',
+          'Low_carbon_electricity',
+          'Primary_energy_consumption_per_capita_new',
+          'Energy_intensity_level_of_primary_energy',
+          'CO2',
+          'gdp_growth',
+          'gdp_per_capita',
+          'Density_n_P_Km2',
+          'Land_Area',
+          'Latitude',
+          'Longitude')
+
+
+correlation_matrix <- cor(data4[cols])
+
+
+corrplot(correlation_matrix, 
+          method = "color", 
+          type = "upper", 
+          tl.col = "black", 
+          tl.srt = 45, 
+          tl.cex = 0.7,
+          diag = FALSE,  
+          addCoef.col = "black",  
+          number.cex = 0.4,  
+          tl.pos = "lt")
+```
+```{r}
+corrplot(correlation_matrix, 
+          method = "ellipse",  # Utiliser la méthode ellipse
+          tl.pos = "lt", type = "upper", 
+          tl.col = "black", 
+          tl.srt = 10, 
+          tl.cex = 0.6)
+
+```
+```{r}
+#On trace un scatterplot pour toutes les variables de corrélation
+
+pairs(data4[, c('Access_to_electricity', 'Access_to_clean_fuels_for_cooking', 'Renewable_energy_share_in_the_total_final_energy_consumption', 'Electricity_from_fossil_fuels', 'Electricity_from_nuclear', 'Electricity_from_renewables', 'Low_carbon_electricity', 'Primary_energy_consumption_per_capita_new', 'Energy_intensity_level_of_primary_energy', 'CO2', 'gdp_growth', 'gdp_per_capita', 'Density_n_P_Km2', 'Land_Area', 'Latitude', 'Longitude')], main = "Scatterplot pour les variables de corrélation")
+
+#On voit pas grand chose, on va essayer de tracer plutôt un scatterplot pour les deux variables les plus corrélées
+
+```
+```{r}
+#On veut voir quelles sont les paires de variables les plus corrélées
+paires_plus_cor <- which(correlation_matrix == max(correlation_matrix[lower.tri(correlation_matrix)], na.rm = TRUE), arr.ind = TRUE)
+
+#On affiche ces variables
+var_plus_cor <- colnames(correlation_matrix)[paires_plus_cor[, 1]]
+var_plus_cor
+
+```
+```{r}
+
+#On affiche un nuage de points pour visualiser les relations entre les paires de variables les plus corrélées
+scatterplot <- ggplot(data4, aes(x = Electricity_from_fossil_fuels, y = CO2)) +
+  geom_point() +  
+  labs(title = "Relation entre les variables les plus corrélées : C02 et Electricity_from_fossil_fuels",
+       x = "Electricity_from_fossil_fuels",
+       y = "CO2")
+
+scatterplot
+
+```
+```{r}
+#QUESTION 7
+library(ggbiplot)
+
+
+#On créée un nouveau dataframe pour garder seulement les variables quantitatives
+
+data5 <- subset(data4, select = -c(Entity, Year))
+
+#On fait une ACP
+#On met "true" pour standardiser les données
+
+pca <- PCA(data4,quali.sup=c(1,2), scale. = TRUE,graph=FALSE)
+summary(pca)
+
+fviz_pca_ind(pca,geom=c("point"), habillage = data4[,2])
+
+```
+En 2 dimensions on explique 50% de la variance, on distingue bcp d'outliers
+
+```{r}
+#On affiche la qualité de représentation des variables : comment les axes permettent d'expliquer les variables
+q1=fviz_pca_var(pca, col.var="cos2",repel=TRUE,gradient.cols=c("#00afbb","red","yellow"))
+q1
+
+
+```
+```{r}
+#On affiche la contribution des variables aux axes
+
+c1=fviz_pca_var(pca,col.var="contrib",repel=TRUE,gradient.cols=c("#00afbb","red","yellow"))
+c1
+
+```
+
+```{r}
+q2=fviz_pca_ind(pca, col.ind="cos2",geom=c("point"),gradient.cols=c("#00afbb","red","yellow"))
+q2
+
+```
+Les individus proches de 0 sont mal expliqués
+
+```{r}
+c2=fviz_pca_ind(pca, col.ind="contrib",geom=c("point"),gradient.cols=c("#00afbb","red","yellow"))
+c2
+```
+
+
+
+
+```{r}
+
+#On garde les valeurs propres de l'objet PCA, qui correspondent à la quantité de variance expliquée par chaque composante principale.
+
+variance_expliquée <- pca$sdev^2
+
+#On calcule la proportion de variance expliquée : contribution de chaque composante principale à la variance totale des données
+
+proportion_variance <- variance_expliquée / sum(variance_expliquée)
+
+#On affiche la variance expliquée en fonction des composantes principales
+
+data_variance <- data.frame(Composante = 1:length(variance_expliquée), Variance_Expliquée = proportion_variance)
+
+ggplot(data_variance, aes(x = Composante, y = Variance_Expliquée)) +
+  geom_line(color = "purple") +
+  geom_point(color = "purple") +
+  labs(title = "Variance expliquée par chaque composante principale",
+       x = "Composantes principales",
+       y = "Proportion de variance expliquée") +
+  theme_minimal()
+
+```
+```{r}
+#Plus la proportion de variance expliquée est élevée pour une composante principale donnée, plus cette composante principale est importante pour représenter la structure des données : la 1ère composante est celle qui est la plus importante ici
+
+```
+
+
+```{r}
+#QUESTION 8
+
+#Ici on doit travailler avec data4 pour avoir les variables qualitatives
+
+#On affiche une dépendance linéaire entre les variables C02 et Year
+
+ggplot(data4, aes(x = Year, y = CO2)) +
+  geom_point() +  
+ labs(title = "Dépendance entre l'année et les émissions de CO2",
+       x = "Année",
+       y = "Émissions de CO2 (en kt)")
+
+```
+```{r}
+#On fait la même chose mais avec un graphique intéractif pour avoir la valeur exacte de CO2 en chaque point
+library(plotly)
+plot_ly(data = data4, x = ~Year, y = ~CO2, type = "scatter", mode = "markers")
+```
+
+
+```{r}
+
+#On trace un graphique en violon des émissions de CO2 par année
+
+ggplot(data4, aes(x = Year, y = CO2)) +
+  geom_violin(fill = "purple") +
+  labs(title = "Emissions de CO2 par année",
+       x = "Année",
+       y = "Émissions de CO2 (en kt)")
+
+
+
+```
+
+```{r}
+#Diagramme en boîte des émissions de CO2 par année
+
+ggplot(data4, aes(x = Year, y = CO2)) +
+  geom_boxplot(fill = "purple") +
+  labs(title = "Diagramme en boite des émissions de CO2 par année",
+       x = "Année",
+       y = "Émissions de CO2 (en kt)")
+
+```
+
+
+
+```{r}
+
+#On créé un df avec les valeurs max de CO2 par année
+
+CO2_max_year <- aggregate(data4$CO2, by=list(Year=data4$Year), FUN=max)
+CO2_max_year <- CO2_max_year[order(CO2_max_year$x),]
+CO2_max_year20 <- head(CO2_max_year, 20)
+names(CO2_max_year20) <- c("Year", "CO2")
+
+# Création du graphique à barres
+fig <- ggplot(CO2_max_year20, aes(x = Year, y = CO2, fill = CO2)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Year", y = "Emissions CO2", title = "Quantité de CO2 maximale en fonction des années") +
+  theme_minimal()
+
+print(fig )
+
+```
+```{r}
+#Le max des CO2 n'est pas judicieux car on a bcp de outliers
+
+#On créé un df avec les valeurs moyennes de CO2 par année
+
+CO2_moy_year <- aggregate(data4$CO2, by=list(Year=data4$Year), FUN=mean)
+CO2_moy_year <- CO2_moy_year[order(CO2_moy_year$x),]
+CO2_moy_year20 <- head(CO2_moy_year, 20)
+names(CO2_moy_year20) <- c("Year", "CO2")
+
+# Création du graphique à barres
+fig <- ggplot(CO2_moy_year20, aes(x = Year, y = CO2, fill = CO2)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Year", y = "Emissions CO2", title = "Quantité de CO2 moyenne en fonction des années") +
+  theme_minimal()
+
+print(fig )
+
+```
+
+```{r}
+#Diagramme en boîte des émissions de CO2 par année
+data_log <- data4
+data_log <- data_log[, 11, drop = FALSE]  # Conserver la structure de dataframe
+data_log[, 1] <- log(data_log[, 1])  # Appliquer log à la colonne extraite
+data_log$Year <- data4$Year  # Réattribuer la colonne Year
+
+
+ggplot(data_log, aes(x = Year, y = CO2)) +
+  geom_boxplot(fill = "purple") +
+  labs(title = "Diagramme en boite des émissions de CO2 par année",
+       x = "Année",
+       y = "Émissions de CO2 (en kt)")
+
+```
+```{r}
+#On va faire une ANOVA à 1 facteur pour analyser la dépendance d'une variable quantitative avec une variable qualitative
+
+anova1 <- lm(CO2 ~ Year, data = data4)
+summary(anova1)
+
+```
+```{r}
+#On créé un 2ème modèle pour comparer avec le précédent 
+anova2 <- lm(CO2 ~ 1, data = data4)
+
+#On compare le sous modèle avec le modèle1, on a une p-val>0.05, c'est sur qu'on accepte ce sous modèle.
+anova(anova2,anova1)
+```
+```{r}
+#On vérifie ces résultats avec un test d'indépendance du chi2
+chi2_test <- chisq.test(data4$CO2, data4$Year)
+print(chi2_test)
+
+#pval=0.14>0.05 : on rejette pas H0, CO2 et Year sont indépendants
+```
+```{r}
+#On se rend compte que sur les tests on peut enlever l'année alors que sur les graphes des quantités moyennes de CO2 on voit quand même une augmentation au fil des années
+
+#On essaye donc de faire un modèle en fonction du pays et de l'année
+anova3 <- lm(CO2 ~ Year+Entity, data = data4)
+summary(anova3)
+```
+Le R^2 est de 0.93 donc modèle bcp mieux 
+
+```{r}
+#On fait mtn un sous modèle en fonction seulement du pays
+anova4=lm(CO2 ~ Entity, data = data4)
+#On compare ce sous modèle avec le précédent
+anova(anova4,anova3)
+```
+On voit que pval=0.15>0.05, donc on peut garder le sous modèle et donc l'effet de l'année est en fait négligeable par rapport à celui du pays
+
