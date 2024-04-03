@@ -12,6 +12,17 @@ library(ggplot2)
 library(factoextra)
 library(FactoMineR)
 library(gridExtra)
+library(caret)
+library(glmnet)
+library(MASS)
+library(e1071)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(gbm)
+library(neuralnet)
+
+
  
 ```
 
@@ -391,16 +402,21 @@ c2
 ```{r}
 
 #On garde les valeurs propres de l'objet PCA, qui correspondent à la quantité de variance expliquée par chaque composante principale.
+print(pca$sdev)
 
 variance_expliquée <- pca$sdev^2
 
 #On calcule la proportion de variance expliquée : contribution de chaque composante principale à la variance totale des données
+proportion_variance <- pca$sdev^2 / sum(pca$sdev^2)
 
-proportion_variance <- variance_expliquée / sum(variance_expliquée)
+# Vérifier la longueur des vecteurs
+print(length(variance_expliquée))  # Assurez-vous qu'ils ont la même longueur
+print(length(proportion_variance))
 
 #On affiche la variance expliquée en fonction des composantes principales
 
 data_variance <- data.frame(Composante = 1:length(variance_expliquée), Variance_Expliquée = proportion_variance)
+
 
 ggplot(data_variance, aes(x = Composante, y = Variance_Expliquée)) +
   geom_line(color = "purple") +
@@ -555,4 +571,135 @@ anova4=lm(CO2 ~ Entity, data = data4)
 anova(anova4,anova3)
 ```
 On voit que pval=0.15>0.05, donc on peut garder le sous modèle et donc l'effet de l'année est en fait négligeable par rapport à celui du pays
+
+```{r}
+#----------------------------------------------PARTIE 2--------------------------------------------------------------------
+
+
+
+
+#QUESTION 1
+data6 <- data4 %>%
+  select(-Electricity_from_fossil_fuels)
+```
+
+
+```{r}
+data6$Entity <- as.factor(data6$Entity)
+class(data6$Entity)
+```
+
+
+```{r}
+names(data6) 
+
+#On sélectionne les variables prédictives : toutes sauf la variable à prédire
+X <- subset(data6, select = -c(CO2))
+
+#On garde la variable à prédire : CO2
+
+y <- data6$CO2
+
+#On divise les données en un ensemble d'apprentissage et un ensemble de test
+set.seed(123)
+
+#Ici on garde que 20% des données pour l'échantillon test
+
+train_index <- createDataPartition(y, p = 0.8, list = FALSE)
+
+#Données d'apprentissage :
+
+train_data <- data6[train_index, ]
+
+#Données de test :
+test_data <- data6[-train_index, ]
+
+
+
+```
+
+```{r}
+#QUESTION 2
+
+
+# 1) Regression linéaire
+
+
+#Sans sélection de variables
+lm_model_complet <- lm(CO2 ~ ., data = train_data)
+
+##Avec sélection de variables : on cherche les variables à garder
+
+lm_model_AIC<- stepAIC(lm_model_complet, trace=FALSE)
+summary(lm_model_AIC)
+
+
+# Avec pénalisation (par exemple Lasso)
+
+lasso_model <- cv.glmnet(as.matrix(train_data[-1]), train_data$CO2, alpha = 1)
+
+
+
+```
+```{r}
+#2) SVM
+
+#Avec noyau linéaire
+
+svm_model_linear <- svm(CO2 ~ ., data = train_data, kernel = "linear")
+
+```
+
+
+```{r}
+#3) Arbre de décision
+
+# Sélection des paramètres optimaux par validation croisée
+arbre_model <- rpart(CO2 ~ ., data = train_data, method = "anova")
+
+```
+
+
+```{r}
+#4) Forêt aléatoire
+
+
+# Sélection des paramètres optimaux par validation croisée
+foret_model <- randomForest(CO2 ~ ., data = train_data, ntree = 500)
+
+```
+
+
+```{r}
+#5) Boosting
+
+
+# Sélection des paramètres optimaux par validation croisée
+boost_model <- gbm(CO2 ~ ., data = train_data, distribution = "gaussian", n.trees = 1000)
+
+```
+
+
+```{r}
+#6) Réseau de neurones
+
+
+# Sélection des paramètres optimaux par validation croisée
+reseau_model <- neuralnet(CO2 ~ ., data = train_data, hidden = c(5, 2))
+
+```
+
+```{r}
+
+
+lm_pred <- predict(lm_model_AIC, newdata = test_data)
+
+lm_rmse <- sqrt(mean((test_data$CO2 - lm_pred)^2))
+#Prédiction sur l'ensemble de test
+#Pour chaque modèle on va calculer l'erreur de généralisation
+
+```
+
+
+
 
