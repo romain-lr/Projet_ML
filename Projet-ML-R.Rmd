@@ -67,7 +67,7 @@ class(data$Density.n.P.Km2.)
 #Verify that we have the right types for the variables 'Years' and 'Density' 
 str(data)
 ```
-##*Question 2*
+##*Question 2* A VOIR POUR RENOMMER ME DATA
 - Determine the rate of missing values for each variable.
 - For this project, we propose to remove the variables with a very high rate of missing data:
     - Renewable-electricity-generating-capacity-per-capita
@@ -382,23 +382,7 @@ c2
 ```
 
 ```{r}
-
-#We keep the eigenvalues of the PCA object, which correspond to the amount of variance explained by each principal component.
-variance_explained <- pca$sdev^2
-
-#The proportion of variance explained is calculated: the contribution of each principal component to the total variance of the data.
-proportion_var <- variance_explained / sum(variance_explained)
-
-#The variance explained by the principal components is displayed.
-data_var <- data.frame(Composante = 1:length(var_explained), Variance_Explained = proportion_var)
-
-ggplot(data_var, aes(x = Composante, y = Variance_Explained)) +
-  geom_line(color = "purple") +
-  geom_point(color = "purple") +
-  labs(title = "Variance explained by each principal component",
-       x = "Principales Components",
-       y = "Proportion of variance explained") +
-  theme_minimal()
+fviz_eig(pca)
 ```
 
 
@@ -545,3 +529,124 @@ anova(anova4,anova3)
 ```
 
 #*Part II : Modelisation*
+
+##Question1
+```{r}
+data6 <- subset(data2, select =-Electricity_from_fossil_fuels)
+```
+
+
+```{r}
+data6$Entity <- as.factor(data6$Entity)
+class(data6$Entity)
+```
+
+
+```{r}
+names(data6) 
+
+#On sélectionne les variables prédictives : toutes sauf la variable à prédire
+X <- subset(data6, select = -c(CO2))
+
+#On garde la variable à prédire : CO2
+
+y <- data6$CO2
+
+#On divise les données en un ensemble d'apprentissage et un ensemble de test
+set.seed(123)
+
+#Ici on garde que 20% des données pour l'échantillon test
+
+train_index <- createDataPartition(y, p = 0.8, list = FALSE)
+
+#Données d'apprentissage :
+
+train_data <- data6[train_index, ]
+
+#Données de test :
+test_data <- data6[-train_index, ]
+
+
+
+```
+##Question2
+
+```{r}
+#QUESTION 2
+
+
+# 1) Regression linéaire
+
+
+#Sans sélection de variables
+lm_model_complet <- lm(CO2 ~ ., data = train_data)
+
+##Avec sélection de variables : on cherche les variables à garder
+
+lm_model_AIC<- stepAIC(lm_model_complet, trace=FALSE)
+summary(lm_model_AIC)
+
+
+# Avec pénalisation (par exemple Lasso)
+
+lasso_model <- cv.glmnet(as.matrix(train_data[-1]), train_data$CO2, alpha = 1)
+
+
+
+```
+```{r}
+#2) SVM
+
+#Avec noyau linéaire
+
+svm_model_linear <- svm(CO2 ~ ., data = train_data, kernel = "linear")
+
+```
+
+
+```{r}
+#3) Arbre de décision
+
+# Sélection des paramètres optimaux par validation croisée
+arbre_model <- rpart(CO2 ~ ., data = train_data, method = "anova")
+
+```
+
+
+```{r}
+#4) Forêt aléatoire
+
+
+# Sélection des paramètres optimaux par validation croisée
+foret_model <- randomForest(CO2 ~ ., data = train_data, ntree = 500)
+
+```
+
+
+```{r}
+#5) Boosting
+
+
+# Sélection des paramètres optimaux par validation croisée
+boost_model <- gbm(CO2 ~ ., data = train_data, distribution = "gaussian", n.trees = 1000)
+
+```
+
+
+```{r}
+#6) Réseau de neurones
+
+
+# Sélection des paramètres optimaux par validation croisée
+reseau_model <- neuralnet(CO2 ~ ., data = train_data, hidden = c(5, 2))
+
+```
+
+```{r}
+
+
+lm_pred <- predict(lm_model_AIC, newdata = test_data)
+
+lm_rmse <- sqrt(mean((test_data$CO2 - lm_pred)^2))
+#Prédiction sur l'ensemble de test
+#Pour chaque modèle on va calculer l'erreur de généralisation

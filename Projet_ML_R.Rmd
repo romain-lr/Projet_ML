@@ -21,9 +21,6 @@ library(rpart.plot)
 library(randomForest)
 library(gbm)
 library(neuralnet)
-
-
- 
 ```
 
 
@@ -401,31 +398,7 @@ c2
 
 ```{r}
 
-#On garde les valeurs propres de l'objet PCA, qui correspondent à la quantité de variance expliquée par chaque composante principale.
-print(pca$sdev)
-
-variance_expliquée <- pca$sdev^2
-
-#On calcule la proportion de variance expliquée : contribution de chaque composante principale à la variance totale des données
-proportion_variance <- pca$sdev^2 / sum(pca$sdev^2)
-
-# Vérifier la longueur des vecteurs
-print(length(variance_expliquée))  # Assurez-vous qu'ils ont la même longueur
-print(length(proportion_variance))
-
-#On affiche la variance expliquée en fonction des composantes principales
-
-data_variance <- data.frame(Composante = 1:length(variance_expliquée), Variance_Expliquée = proportion_variance)
-
-
-ggplot(data_variance, aes(x = Composante, y = Variance_Expliquée)) +
-  geom_line(color = "purple") +
-  geom_point(color = "purple") +
-  labs(title = "Variance expliquée par chaque composante principale",
-       x = "Composantes principales",
-       y = "Proportion de variance expliquée") +
-  theme_minimal()
-
+fviz_eig(pca)
 ```
 ```{r}
 #Plus la proportion de variance expliquée est élevée pour une composante principale donnée, plus cette composante principale est importante pour représenter la structure des données : la 1ère composante est celle qui est la plus importante ici
@@ -579,8 +552,9 @@ On voit que pval=0.15>0.05, donc on peut garder le sous modèle et donc l'effet 
 
 
 #QUESTION 1
-data6 <- data4 %>%
-  select(-Electricity_from_fossil_fuels)
+data6 <- subset(data4, select =-Electricity_from_fossil_fuels)
+#data6 <- data4 %>% 
+#  select(-Electricity_from_fossil_fuels)
 ```
 
 
