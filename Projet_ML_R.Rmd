@@ -602,19 +602,29 @@ test_data <- data6[-train_index, ]
 #Sans sélection de variables
 lm_model_complet <- lm(CO2 ~ ., data = train_data)
 
-##Avec sélection de variables : on cherche les variables à garder
+
+#Avec sélection de variables : on cherche les variables à garder
 
 lm_model_AIC<- stepAIC(lm_model_complet, trace=FALSE)
 summary(lm_model_AIC)
 
 
-# Avec pénalisation (par exemple Lasso)
+#Avec pénalisation (par exemple Lasso)
 
-lasso_model <- cv.glmnet(as.matrix(train_data[-1]), train_data$CO2, alpha = 1)
+#On enlève la variable C02 et on transforme en matrice
+
+x=as.matrix(train_data[-1])
+y=train_data$CO2
+
+#On fait avec validation croisée
+
+lasso_model <- cv.glmnet(x, y, alpha = 1)
 
 
 
 ```
+
+
 ```{r}
 #2) SVM
 
@@ -622,14 +632,18 @@ lasso_model <- cv.glmnet(as.matrix(train_data[-1]), train_data$CO2, alpha = 1)
 
 svm_model_linear <- svm(CO2 ~ ., data = train_data, kernel = "linear")
 
+#Avec noyau gaussien 
+
+svm_model_gaussien <- svm(CO2 ~ ., data = train_data, kernel = "radial")
+
 ```
 
 
 ```{r}
 #3) Arbre de décision
 
-# Sélection des paramètres optimaux par validation croisée
-arbre_model <- rpart(CO2 ~ ., data = train_data, method = "anova")
+#Sélection des paramètres optimaux par validation croisée
+tree_model <- rpart(CO2 ~ ., data = train_data, method = "anova")
 
 ```
 
@@ -638,14 +652,17 @@ arbre_model <- rpart(CO2 ~ ., data = train_data, method = "anova")
 #4) Forêt aléatoire
 
 
-# Sélection des paramètres optimaux par validation croisée
+#Sélection des paramètres optimaux par validation croisée
 foret_model <- randomForest(CO2 ~ ., data = train_data, ntree = 500)
+
+#rf_model <- train(CO2 ~ ., data = train_data, method = "rf", trControl = trainControl(method = "cv"))
 
 ```
 
 
 ```{r}
 #5) Boosting
+
 
 
 # Sélection des paramètres optimaux par validation croisée
