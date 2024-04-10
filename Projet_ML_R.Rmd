@@ -18,6 +18,7 @@ library(MASS)
 library(e1071)
 library(rpart)
 library(rpart.plot)
+library(partykit)
 library(randomForest)
 library(gbm)
 library(neuralnet)
@@ -320,7 +321,7 @@ corrplot(correlation_matrix,
 ```{r}
 #On trace un scatterplot pour toutes les variables de corrélation
 
-pairs(data4[, c('Access_to_electricity', 'Access_to_clean_fuels_for_cooking', 'Renewable_energy_share_in_the_total_final_energy_consumption', 'Electricity_from_fossil_fuels', 'Electricity_from_nuclear', 'Electricity_from_renewables', 'Low_carbon_electricity', 'Primary_energy_consumption_per_capita_new', 'Energy_intensity_level_of_primary_energy', 'CO2', 'gdp_growth', 'gdp_per_capita', 'Density_n_P_Km2', 'Land_Area', 'Latitude', 'Longitude')], main = "Scatterplot pour les variables de corrélation")
+#pairs(data4[, c('Access_to_electricity', 'Access_to_clean_fuels_for_cooking', 'Renewable_energy_share_in_the_total_final_energy_consumption', 'Electricity_from_fossil_fuels', 'Electricity_from_nuclear', 'Electricity_from_renewables', 'Low_carbon_electricity', 'Primary_energy_consumption_per_capita_new', 'Energy_intensity_level_of_primary_energy', 'CO2', 'gdp_growth', 'gdp_per_capita', 'Density_n_P_Km2', 'Land_Area', 'Latitude', 'Longitude')], main = "Scatterplot pour les variables de corrélation")
 
 #On voit pas grand chose, on va essayer de tracer plutôt un scatterplot pour les deux variables les plus corrélées
 
@@ -574,6 +575,8 @@ X <- subset(data6, select = -c(CO2))
 
 y <- data6$CO2
 
+
+
 #On divise les données en un ensemble d'apprentissage et un ensemble de test
 set.seed(123)
 
@@ -588,26 +591,58 @@ train_data <- data6[train_index, ]
 #Données de test :
 test_data <- data6[-train_index, ]
 
+# vérification
+str(train_data)
+str(test_data)
+
 
 
 ```
 
 ```{r}
+#Pour pouvoir comparer les modèles, on créé une fonction qui permet de tracer les résidus avec une échelle fixe
+gplot.res <- function(x, y, titre = "titre"){
+    ggplot(data.frame(x=x, y=y),aes(x,y))+
+    geom_point(col = "blue")+xlim(0, 2500)+ylim(-500000, 500000)+
+    ylab("Résidus")+ xlab("Valeurs prédites")+
+    ggtitle(titre)+
+    geom_hline(yintercept = 0,col="green")
+}
+```
+
+
+```{r}
 #QUESTION 2
+
 
 
 # 1) Regression linéaire
 
 
 #Sans sélection de variables
-lm_model_complet <- lm(CO2 ~ ., data = train_data)
 
+lm_model_complet <- aov(CO2 ~ ., data = train_data)
+res.lm <- lm_model_complet$residuals
+fit.lm <- lm_model_complet$fitted.values
+gplot.res(fit.lm,res.lm,"ANCOVA sans sélection de variables")
+```
+
+```{r}
 
 #Avec sélection de variables : on cherche les variables à garder
 
 lm_model_AIC<- stepAIC(lm_model_complet, trace=FALSE)
-summary(lm_model_AIC)
+#summary(lm_model_AIC)
+res.lm.selec <- lm_model_AIC$residuals
+fit.lm.selec <- lm_model_AIC$fitted.values
+gplot.res(fit.lm.selec,res.lm.selec,"ANCOVA avec sélection de variables")
 
+```
+
+
+
+
+```{r}
 
 #Avec pénalisation (par exemple Lasso)
 
@@ -619,8 +654,21 @@ y=train_data$CO2
 #On fait avec validation croisée
 
 lasso_model <- cv.glmnet(x, y, alpha = 1)
+res.lasso <- lasso_model$residuals
+fit.lasso <- lasso_model$fitted.values
+gplot.res(fit.lasso,res.lasso,"ANCOVA avec Lasso")
 
 
+#ou----------------------------------------------------------------------------------------------
+
+x.mat <- model.matrix(CO2 ~ . - 1, data = train_data) #notre x.mat c'est récupéré juste la matrice de design dans notre modèle où on enlève un intercept, 
+                                                     #cad qu'on va prendre 2 modalités pour jour, soit on a un intercept soit on prend toutes les modalités pour une var; 
+                                                     #mais on garde toujours 4modalités/5 pour la station
+reg.lasso <- glmnet(y = train_data$CO2, x = x.mat)
+options(repr.plot.width = 12, repr.plot.height = 10)
+plot(reg.lasso, xvar = "lambda", label = TRUE)
+legend("topright", 
+       legend = paste(1:ncol(x.mat), " - ", colnames(x.mat)))
 
 ```
 
@@ -636,6 +684,35 @@ svm_model_linear <- svm(CO2 ~ ., data = train_data, kernel = "linear")
 
 svm_model_gaussien <- svm(CO2 ~ ., data = train_data, kernel = "radial")
 
+#On fait SVM en régression sur le noyau par défaut, le "radial"-> Gaussien
+
+svm_model0 = svm(CO2 ~ ., data = train_data)
+set.seed(2021)
+#svm.reg.tune = tune.svm(CO2 ~ ., data = train_data, cost = c(1,2,3,4,5), 
+  #  gamma = seq(0.0, 0.3, by = 0.05))
+#plot(svm.reg.tune)
+
+
+
+```
+
+```{r}
+svm_reg = svm(CO2 ~ ., data = train_data, cost = svm.reg.tune$best.parameters$cost, 
+    gamma = svm.reg.tune$best.parameters$gamma)
+summary(svm_reg)
+```
+On voit que le modèle optimal est celui avec le noyau gaussien et un cout de 3,5.
+
+```{r}
+#Tracé des résidus
+fit.svmr = svm_reg$fitted
+res.svmr = fit.svmr - train_data[,"CO2"]
+
+gplot.res(fit.svmr,res.svmr,titre="Residus SVM")
+
+
+plot(res.svmr, main = "Residus SVM", ylim = c(min(res.svmr), max(res.svmr)))
+
 ```
 
 
@@ -643,9 +720,52 @@ svm_model_gaussien <- svm(CO2 ~ ., data = train_data, kernel = "radial")
 #3) Arbre de décision
 
 #Sélection des paramètres optimaux par validation croisée
-tree_model <- rpart(CO2 ~ ., data = train_data, method = "anova")
+tree_model <- rpart(CO2 ~ ., data = train_data, control=rpart.control(cp=c(0.00001,0.0001,0.001, 0.01, 0.1)))
+options(repr.plot.width = 500, repr.plot.height = 500)
+rpart.plot(tree_model)
 
 ```
+
+```{r}
+
+#On créé une matrice contenant les prédictions de l'arbre de décision tree_model pour chaque observation du jeu de données
+#Chaque ligne correspond à une observation et chaque colonne à une valeur de CP
+
+xmat<-xpred.rpart(tree_model,xval=10) 
+
+#Erreur de validation croisée pour chaque valeur de CP
+
+CVerr<-apply((xmat-train_data[,"CO2"])^2,2,sum)
+
+plotcp(tree_model)
+```
+
+```{r}
+#On trouve le cp qui minimise l'erreur pour construire l'arbre optimal
+which.min(CVerr)
+```
+La taille de l'arbre qui minimise vaut 8
+
+```{r}
+as.numeric(attributes(which.min(CVerr))$names)
+tree_opt_model=rpart(CO2~.,data=train_data,control=rpart.control(cp=as.numeric(attributes(which.min(CVerr))$names)))
+rpart.plot(tree_opt_model,type=5,extra=101)
+
+```
+```{r}
+plot(as.party(tree_opt_model), type="simple")
+```
+```{r}
+#Tracé des résidus 
+
+fit.tree=predict(tree_opt_model)
+res.tree=fit.tree-train_data[,"CO2"]
+gplot.res(fit.tree,res.tree,"Residus de l'arbre optimal")
+plot(res.tree, main = "Residus  de l'arbre optimal", ylim = c(min(res.tree), max(res.tree)))
+
+```
+
+
 
 
 ```{r}
@@ -653,11 +773,39 @@ tree_model <- rpart(CO2 ~ ., data = train_data, method = "anova")
 
 
 #Sélection des paramètres optimaux par validation croisée
-foret_model <- randomForest(CO2 ~ ., data = train_data, ntree = 500)
 
-#rf_model <- train(CO2 ~ ., data = train_data, method = "rf", trControl = trainControl(method = "cv"))
+
+#Il faut d'abord faire un encodage one-hot de la variable Entity car il y a trop de niveaux (148) : une classe sera maintenant représentée par une variable binaire
+
+entity_encoded <- model.matrix(~ Entity - 1, data = train_data)
+
+#On remplace aussi les caractères spéciaux par des "_" pour le nouveau df
+
+colnames(entity_encoded) <- gsub("[^[:alnum:]]", "_", colnames(entity_encoded))
+
+#On forme le nouveau échantillon d'apprentissage en concaténant les matrices encodées avec les autres variables
+
+train_data_encoded <- cbind(train_data[, -which(names(train_data) == "Entity")], entity_encoded)
+
 
 ```
+
+```{r}
+
+#On créé le modèle randomForest
+
+#rf_model <- randomForest(CO2 ~ ., data = train_data_encoded, ntree = 500)
+#rf_model$mtry
+```
+
+```{r}
+#Tracé des résidus
+fit.rf=rf_model$predicted
+res.rf=fit.rf-train_data[,"CO2"]
+gplot.res(fit.rf,res.rf,titre="Residus RandomForest")
+```
+
+
 
 
 ```{r}
@@ -665,9 +813,32 @@ foret_model <- randomForest(CO2 ~ ., data = train_data, ntree = 500)
 
 
 
-# Sélection des paramètres optimaux par validation croisée
-boost_model <- gbm(CO2 ~ ., data = train_data, distribution = "gaussian", n.trees = 1000)
+#Sélection des paramètres optimaux par validation croisée
 
+boost_model <- gbm(CO2 ~ ., data = train_data, distribution = "gaussian", n.trees = 500, 
+    cv.folds = 10, n.minobsinnode = 5, shrinkage = 0.03, verbose = FALSE)
+plot(boost_model$cv.error, type = "l")
+
+
+
+```
+
+```{r}
+#Nombre optimal d'itérations par valiation croisée
+best.iter=gbm.perf(boost_model,method="cv")
+```
+
+
+```{r}
+#On fait varier le coefficient de rétrécissement
+
+test=numeric()
+for (i in 10:500){
+pred.test=predict(boost_model,newdata=test_data,n.trees=i)
+err=sum((pred.test-test_data[,"CO2"])^2)/nrow(test_data)
+test=c(test,err)}
+plot(10:500,test,type="l")
+abline(v=best.iter)
 ```
 
 
@@ -680,15 +851,38 @@ reseau_model <- neuralnet(CO2 ~ ., data = train_data, hidden = c(5, 2))
 
 ```
 
+
+
 ```{r}
+#QUESTION 3
 
-
-lm_pred <- predict(lm_model_AIC, newdata = test_data)
-
-lm_rmse <- sqrt(mean((test_data$CO2 - lm_pred)^2))
 #Prédiction sur l'ensemble de test
 #Pour chaque modèle on va calculer l'erreur de généralisation
 
+
+#Calculs des prédictions sur l'échantillon test pour tous les modèles optimaux
+
+lm_AIC_pred <- predict(lm_model_AIC, newdata = test_data)
+svm_pred <- predict(svm_reg, newdata = test_data)
+tree_pred <- predict(tree_opt_model, newdata = test_data)
+#rf_pred <- predict(rf_model, newdata = test_data)
+#gbm_pred <- predict(gbm_model, newdata = test_data)
+
+#Calculs des métriques de performance
+
+lm_AIC_rmse <- RMSE(lm_AIC_pred, test_data$CO2)
+svm_rmse <- RMSE(svm_pred, test_data$CO2)
+tree_rmse<- RMSE(tree_pred, test_data$CO2)
+#rf_rmse <- RMSE(rf_pred, test_data$CO2)
+#gbm_rmse <- RMSE(gbm_pred, test_data$CO2)
+
+# Afficher les résultats
+
+cat("RMSE pour le modèle de régression linéaire avec AIC :", lm_AIC_rmse, "\n")
+cat("RMSE pour le modèle SVM :", svm_rmse, "\n")
+cat("RMSE pour le modèle d'arbre :", tree_rmse, "\n")
+#cat("RMSE pour le modèle de forêt aléatoire :", rf_rmse, "\n")
+#cat("RMSE pour le modèle GBM :", gbm_rmse, "\n")
 ```
 
 
