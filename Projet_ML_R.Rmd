@@ -885,6 +885,35 @@ cat("RMSE pour le modèle d'arbre :", tree_rmse, "\n")
 #cat("RMSE pour le modèle GBM :", gbm_rmse, "\n")
 ```
 
+```{r}
+
+
+#On fait les prédictions des différents modèles
+predictions <- data.frame(
+  LM_AIC = lm_AIC_pred,
+  SVM = svm_pred,
+  Tree = tree_pred
+)
+
+predictions$True <- test_data$CO2
+
+
+ggplot(predictions, aes(x = True)) +
+  geom_point(aes(y = LM_AIC, color = "LM_AIC"), size = 2, alpha = 0.5) + 
+  geom_point(aes(y = SVM, color = "SVM"), size = 2, alpha = 0.5) + 
+  geom_point(aes(y = Tree, color = "Tree"), size = 2, alpha = 0.5) + 
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") + 
+  labs(title = "Comparaison des prédictions par rapport aux vraies valeurs",
+       x = "Vraie valeur de CO2",
+       y = "Valeur prédite",
+       color = "Modèles") + 
+  scale_color_manual(values = c("blue", "red", "green"), labels = c("LM_AIC", "SVM", "Tree")) + # 
+  theme_minimal()
+
+
+```
+
+
 
 
 
