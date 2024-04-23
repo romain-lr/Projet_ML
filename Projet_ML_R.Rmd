@@ -22,6 +22,7 @@ library(partykit)
 library(randomForest)
 library(gbm)
 library(neuralnet)
+library(ggRandomForests)
 ```
 
 
@@ -689,7 +690,7 @@ svm_model_gaussien <- svm(CO2 ~ ., data = train_data, kernel = "radial")
 svm_model0 = svm(CO2 ~ ., data = train_data)
 set.seed(2021)
 #svm.reg.tune = tune.svm(CO2 ~ ., data = train_data, cost = c(1,2,3,4,5), 
-  #  gamma = seq(0.0, 0.3, by = 0.05))
+    #gamma = seq(0.0, 0.3, by = 0.05))
 #plot(svm.reg.tune)
 
 
@@ -794,8 +795,8 @@ train_data_encoded <- cbind(train_data[, -which(names(train_data) == "Entity")],
 
 #On créé le modèle randomForest
 
-#rf_model <- randomForest(CO2 ~ ., data = train_data_encoded, ntree = 500)
-#rf_model$mtry
+rf_model <- randomForest(CO2 ~ ., data = train_data_encoded, ntree = 500)
+
 ```
 
 ```{r}
@@ -815,7 +816,7 @@ gplot.res(fit.rf,res.rf,titre="Residus RandomForest")
 
 #Sélection des paramètres optimaux par validation croisée
 
-boost_model <- gbm(CO2 ~ ., data = train_data, distribution = "gaussian", n.trees = 500, 
+boost_model <- gbm(CO2 ~ ., data = train_data, distribution = "gaussian", n.trees = 1000, 
     cv.folds = 10, n.minobsinnode = 5, shrinkage = 0.03, verbose = FALSE)
 plot(boost_model$cv.error, type = "l")
 
@@ -832,12 +833,14 @@ best.iter=gbm.perf(boost_model,method="cv")
 ```{r}
 #On fait varier le coefficient de rétrécissement
 
+#On vérifie donc qu'il n'y a pas de sur-ajustement : l'erreur reste stable autour du nombre d'arbres sélectionné et matérialisé par la ligne verticale
+
 test=numeric()
-for (i in 10:500){
+for (i in 10:1000){
 pred.test=predict(boost_model,newdata=test_data,n.trees=i)
 err=sum((pred.test-test_data[,"CO2"])^2)/nrow(test_data)
 test=c(test,err)}
-plot(10:500,test,type="l")
+plot(10:1000,test,type="l")
 abline(v=best.iter)
 ```
 
@@ -851,6 +854,19 @@ reseau_model <- neuralnet(CO2 ~ ., data = train_data, hidden = c(5, 2))
 
 ```
 
+```{r}
+#Avant la question 3 on doit également encoder les données de test (comme celles d'entrainement) pour faire la prédiction avec Random Forest
+
+#On applique l'encodage one-hot sur les données de test
+entity_encoded_test <- model.matrix(~ Entity - 1, data = test_data)
+
+#On remplace les caractères spéciaux par des "_"
+colnames(entity_encoded_test) <- gsub("[^[:alnum:]]", "_", colnames(entity_encoded_test))
+
+
+test_data_encoded <- cbind(test_data[, -which(names(test_data) == "Entity")], entity_encoded_test)
+
+```
 
 
 ```{r}
@@ -865,24 +881,24 @@ reseau_model <- neuralnet(CO2 ~ ., data = train_data, hidden = c(5, 2))
 lm_AIC_pred <- predict(lm_model_AIC, newdata = test_data)
 svm_pred <- predict(svm_reg, newdata = test_data)
 tree_pred <- predict(tree_opt_model, newdata = test_data)
-#rf_pred <- predict(rf_model, newdata = test_data)
-#gbm_pred <- predict(gbm_model, newdata = test_data)
+rf_pred <- predict(rf_model, newdata = test_data_encoded)
+boost_pred <- predict(boost_model, newdata = test_data)
 
 #Calculs des métriques de performance
 
 lm_AIC_rmse <- RMSE(lm_AIC_pred, test_data$CO2)
 svm_rmse <- RMSE(svm_pred, test_data$CO2)
 tree_rmse<- RMSE(tree_pred, test_data$CO2)
-#rf_rmse <- RMSE(rf_pred, test_data$CO2)
-#gbm_rmse <- RMSE(gbm_pred, test_data$CO2)
+rf_rmse <- RMSE(rf_pred, test_data$CO2)
+boost_rmse <- RMSE(boost_pred, test_data$CO2)
 
-# Afficher les résultats
+#On affiche les erreurs de généralisation calculées
 
 cat("RMSE pour le modèle de régression linéaire avec AIC :", lm_AIC_rmse, "\n")
 cat("RMSE pour le modèle SVM :", svm_rmse, "\n")
 cat("RMSE pour le modèle d'arbre :", tree_rmse, "\n")
-#cat("RMSE pour le modèle de forêt aléatoire :", rf_rmse, "\n")
-#cat("RMSE pour le modèle GBM :", gbm_rmse, "\n")
+cat("RMSE pour le modèle de forêt aléatoire :", rf_rmse, "\n")
+cat("RMSE pour le modèle Boosting :", boost_rmse, "\n")
 ```
 
 ```{r}
@@ -892,7 +908,9 @@ cat("RMSE pour le modèle d'arbre :", tree_rmse, "\n")
 predictions <- data.frame(
   LM_AIC = lm_AIC_pred,
   SVM = svm_pred,
-  Tree = tree_pred
+  Tree = tree_pred,
+  Random_forest=rf_pred,
+  Boost=boost_pred
 )
 
 predictions$True <- test_data$CO2
@@ -901,14 +919,41 @@ predictions$True <- test_data$CO2
 ggplot(predictions, aes(x = True)) +
   geom_point(aes(y = LM_AIC, color = "LM_AIC"), size = 2, alpha = 0.5) + 
   geom_point(aes(y = SVM, color = "SVM"), size = 2, alpha = 0.5) + 
-  geom_point(aes(y = Tree, color = "Tree"), size = 2, alpha = 0.5) + 
+  geom_point(aes(y = Tree, color = "Tree"), size = 2, alpha = 0.5) +
+  geom_point(aes(y = Random_forest, color = "Random Forest"), size = 2, alpha = 0.5) +
+  geom_point(aes(y = Boost, color = "Boosting"), size = 2, alpha = 0.5)+
   geom_abline(slope = 1, intercept = 0, linetype = "dashed") + 
   labs(title = "Comparaison des prédictions par rapport aux vraies valeurs",
-       x = "Vraie valeur de CO2",
-       y = "Valeur prédite",
+       x = "Vraies valeurs de CO2",
+       y = "Valeurs prédites",
        color = "Modèles") + 
-  scale_color_manual(values = c("blue", "red", "green"), labels = c("LM_AIC", "SVM", "Tree")) + # 
+  scale_color_manual(values = c("blue", "red", "green","pink","orange"), labels = c("LM_AIC", "SVM", "Tree","Random Forest", "Boosting")) + # 
   theme_minimal()
+
+
+```
+
+
+```{r}
+#QUESTION 4 
+
+#On regarde l'importance des variables 
+
+
+#Pour RandomForest:
+importance <- round(importance(rf_model)[, 1], 2)
+importance_sorted <- sort(importance, decreasing = TRUE)
+
+#On affiche seulement les 10 premières variables les plus importantes
+
+top_10_importance <- importance_sorted[1:10]
+print(top_10_importance)
+
+#On voit que pour Rf, c'est Electricity_from_renewables qui est la plus importante
+varImpPlot(rf_model)
+
+plot(gg_vimp(rf_model))
+
 
 
 ```
