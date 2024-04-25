@@ -23,6 +23,7 @@ library(randomForest)
 library(gbm)
 library(neuralnet)
 library(ggRandomForests)
+library(xgboost)
 ```
 
 
@@ -72,6 +73,7 @@ print(données_manquantes)
 ```
 
 ```{r}
+
 fig <- plot_ly(x = names(données_manquantes), y = données_manquantes, type = "bar", 
                name = "Valeurs manquantes par variables", 
                marker = list(color = "purple"),
@@ -276,6 +278,7 @@ str(data4)
 
 
 ```{r}
+names(data4)
 
 
 cols <- c('Access_to_electricity',
@@ -297,7 +300,7 @@ cols <- c('Access_to_electricity',
 
 
 correlation_matrix <- cor(data4[cols])
-
+dim(data4)
 
 corrplot(correlation_matrix, 
           method = "color", 
@@ -570,11 +573,14 @@ class(data6$Entity)
 names(data6) 
 
 #On sélectionne les variables prédictives : toutes sauf la variable à prédire
-X <- subset(data6, select = -c(CO2))
+#On enlève également les variables quantitatives
+data7 <- subset(data6, select =-c(Entity,Year))
+
+X <- subset(data7, select = -c(CO2))
 
 #On garde la variable à prédire : CO2
 
-y <- data6$CO2
+y <- data7$CO2
 
 
 
@@ -587,10 +593,10 @@ train_index <- createDataPartition(y, p = 0.8, list = FALSE)
 
 #Données d'apprentissage :
 
-train_data <- data6[train_index, ]
+train_data <- data7[train_index, ]
 
 #Données de test :
-test_data <- data6[-train_index, ]
+test_data <- data7[-train_index, ]
 
 # vérification
 str(train_data)
@@ -604,7 +610,7 @@ str(test_data)
 #Pour pouvoir comparer les modèles, on créé une fonction qui permet de tracer les résidus avec une échelle fixe
 gplot.res <- function(x, y, titre = "titre"){
     ggplot(data.frame(x=x, y=y),aes(x,y))+
-    geom_point(col = "blue")+xlim(0, 2500)+ylim(-500000, 500000)+
+    geom_point(col = "blue")+
     ylab("Résidus")+ xlab("Valeurs prédites")+
     ggtitle(titre)+
     geom_hline(yintercept = 0,col="green")
@@ -668,8 +674,8 @@ x.mat <- model.matrix(CO2 ~ . - 1, data = train_data) #notre x.mat c'est récup�
 reg.lasso <- glmnet(y = train_data$CO2, x = x.mat)
 options(repr.plot.width = 12, repr.plot.height = 10)
 plot(reg.lasso, xvar = "lambda", label = TRUE)
-legend("topright", 
-       legend = paste(1:ncol(x.mat), " - ", colnames(x.mat)))
+#legend("topright", 
+       #legend = paste(1:ncol(x.mat), " - ", colnames(x.mat)))
 
 ```
 
@@ -689,9 +695,9 @@ svm_model_gaussien <- svm(CO2 ~ ., data = train_data, kernel = "radial")
 
 svm_model0 = svm(CO2 ~ ., data = train_data)
 set.seed(2021)
-#svm.reg.tune = tune.svm(CO2 ~ ., data = train_data, cost = c(1,2,3,4,5), 
-    #gamma = seq(0.0, 0.3, by = 0.05))
-#plot(svm.reg.tune)
+svm.reg.tune = tune.svm(CO2 ~ ., data = train_data, cost = c(1,10,100,1000), 
+    gamma = seq(0.0, 0.3, by = 0.05))
+plot(svm.reg.tune)
 
 
 
@@ -776,26 +782,7 @@ plot(res.tree, main = "Residus  de l'arbre optimal", ylim = c(min(res.tree), max
 #Sélection des paramètres optimaux par validation croisée
 
 
-#Il faut d'abord faire un encodage one-hot de la variable Entity car il y a trop de niveaux (148) : une classe sera maintenant représentée par une variable binaire
-
-entity_encoded <- model.matrix(~ Entity - 1, data = train_data)
-
-#On remplace aussi les caractères spéciaux par des "_" pour le nouveau df
-
-colnames(entity_encoded) <- gsub("[^[:alnum:]]", "_", colnames(entity_encoded))
-
-#On forme le nouveau échantillon d'apprentissage en concaténant les matrices encodées avec les autres variables
-
-train_data_encoded <- cbind(train_data[, -which(names(train_data) == "Entity")], entity_encoded)
-
-
-```
-
-```{r}
-
-#On créé le modèle randomForest
-
-rf_model <- randomForest(CO2 ~ ., data = train_data_encoded, ntree = 500)
+rf_model <- randomForest(CO2 ~ ., data = train_data, ntree = 500)
 
 ```
 
@@ -806,6 +793,16 @@ res.rf=fit.rf-train_data[,"CO2"]
 gplot.res(fit.rf,res.rf,titre="Residus RandomForest")
 ```
 
+```{r}
+#Tracé des résidus sur l'échantillon de test
+fit.rf=rf_model$predicted
+res.rf=fit.rf-test_data[,"CO2"]
+
+gplot.res(fit.rf,res.rf,titre="Residus RandomForest")
+
+
+plot(res.rf, main = "Residus RandomForest", ylim = c(min(res.rf), max(res.rf)))
+```
 
 
 
@@ -854,19 +851,6 @@ reseau_model <- neuralnet(CO2 ~ ., data = train_data, hidden = c(5, 2))
 
 ```
 
-```{r}
-#Avant la question 3 on doit également encoder les données de test (comme celles d'entrainement) pour faire la prédiction avec Random Forest
-
-#On applique l'encodage one-hot sur les données de test
-entity_encoded_test <- model.matrix(~ Entity - 1, data = test_data)
-
-#On remplace les caractères spéciaux par des "_"
-colnames(entity_encoded_test) <- gsub("[^[:alnum:]]", "_", colnames(entity_encoded_test))
-
-
-test_data_encoded <- cbind(test_data[, -which(names(test_data) == "Entity")], entity_encoded_test)
-
-```
 
 
 ```{r}
@@ -881,7 +865,7 @@ test_data_encoded <- cbind(test_data[, -which(names(test_data) == "Entity")], en
 lm_AIC_pred <- predict(lm_model_AIC, newdata = test_data)
 svm_pred <- predict(svm_reg, newdata = test_data)
 tree_pred <- predict(tree_opt_model, newdata = test_data)
-rf_pred <- predict(rf_model, newdata = test_data_encoded)
+rf_pred <- predict(rf_model, newdata = test_data)
 boost_pred <- predict(boost_model, newdata = test_data)
 
 #Calculs des métriques de performance
@@ -958,7 +942,151 @@ plot(gg_vimp(rf_model))
 
 ```
 
+On a des résultats cohérents : les variables Electricity_from_renewables, Land_area et Electricity_from_nuclear sont très corrélées avec la variable C02 dans notre matrice de corrélation de la partie 1. On voit que ce sont les 3 variables les plus importantes pour le modèle de Random Forest.
 
 
+```{r}
+#Pour les arbres
+
+rpart.plot(tree_model)
+
+```
+
+Pour les arbres on voit que la variable la plus importante est Electricity_from_renewables (car en haut de l'arbre), c'est donc également cohérent.
+
+
+```{r}
+#Pour la regression linéaire
+#cat("Coeff de Lasso :", coefficients(lasso_model), "\n")
+
+coefficients(lm_model_AIC)
+
+which.max(coefficients(lm_model_AIC))
+which.max(coefficients(lm_model_complet))
+
+coefficients(lm_model_complet)
+```
+
+```{r}
+
+#Pour la regression linéaire on affiche les coeff des variables 
+
+#Modele AIC
+
+variable_names <- names(coefficients(lm_model_AIC))
+coefficients <- coef(lm_model_AIC)
+
+reg_aic_coefficients <- data.frame(
+  Variables = variable_names,
+  Coefficient = coefficients
+)
+
+#On enlève l'intercept pour le graphe
+reg_aic_coefficients <- reg_aic_coefficients[reg_aic_coefficients$Variables != "(Intercept)", ]
+ggplot(reg_aic_coefficients, aes(x = Variables, y = Coefficient)) +
+  geom_bar(stat = "identity", fill = "skyblue", width = 0.5) +
+  coord_flip() +
+  labs(title = "Coeff pour le modèle AIC",
+       x = "Variables",
+       y = "Coefficient") +
+  theme_minimal()
+
+```
+```{r}
+#Modele complet
+
+variable_names <- names(coefficients(lm_model_complet))
+coefficients <- coef(lm_model_complet)
+
+reg_complet_coefficients <- data.frame(
+  Variables = variable_names,
+  Coefficient = coefficients
+)
+
+#On enlève l'intercept pour le graphe
+reg_complet_coefficients <- reg_complet_coefficients[reg_complet_coefficients$Variables != "(Intercept)", ]
+ggplot(reg_complet_coefficients, aes(x = Variables, y = Coefficient)) +
+  geom_bar(stat = "identity", fill = "skyblue", width = 0.5) +
+  coord_flip() +
+  labs(title = "Coeff pour le modèle reg complet",
+       x = "Variables",
+       y = "Coefficient") +
+  theme_minimal()
+
+```
+
+```{r}
+coefficients(boost_model)
+```
+
+
+
+```{r}
+
+#Pour SVM on affiche les coeff des variables 
+
+variable_names <- names(coef(svm_model_linear))
+coefficients <- coef(svm_model_linear)
+
+svm_coefficients <- data.frame(
+  Variables = variable_names,
+  Coefficient = coefficients
+)
+
+#On enlève l'intercept pour le graphe
+svm_coefficients <- svm_coefficients[svm_coefficients$Variables != "(Intercept)", ]
+ggplot(svm_coefficients, aes(x = Variables, y = Coefficient)) +
+  geom_bar(stat = "identity", fill = "skyblue", width = 0.5) +
+  coord_flip() +
+  labs(title = "Coeff pour le modèle SVM",
+       x = "Variables",
+       y = "Coefficient") +
+  theme_minimal()
+```
+On voit également que c'est Electricty_from_renewables qui est la plus importante.
+
+
+
+```{r}
+#QUESTION 5
+
+#Imputation des données manquantes par la moyenne de chaque variable
+
+
+#Sur les données d'entrainement 
+train_data_imputed <- train_data %>%  mutate_all(list(~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+
+
+#On vérifie qu'il n'y a plus de données manquantes
+données_manquantes_train <- colSums(is.na(train_data_imputed))
+print(données_manquantes_train)
+
+fig <- plot_ly(x = names(données_manquantes_train), y = données_manquantes_train, type = "bar", 
+               name = "Valeurs manquantes par variables", 
+               marker = list(color = "purple"),
+               xlab = "Variables", ylab = "Nombre de valeurs manquantes",
+               title = "Valeurs manquantes par variables")
+
+fig
+```
+
+```{r}
+#Pareil pour les données de test
+test_data_imputed <- test_data %>%
+  mutate_all(list(~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+
+#On vérifie
+données_manquantes_test <- colSums(is.na(test_data_imputed))
+print(données_manquantes_test)
+
+fig <- plot_ly(x = names(données_manquantes_test), y = données_manquantes_test, type = "bar", 
+               name = "Valeurs manquantes par variables", 
+               marker = list(color = "blue"),
+               xlab = "Variables", ylab = "Nombre de valeurs manquantes",
+               title = "Valeurs manquantes par variables (Données de test)")
+
+fig
+
+```
 
 
