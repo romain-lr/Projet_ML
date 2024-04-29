@@ -24,6 +24,7 @@ library(gbm)
 library(neuralnet)
 library(ggRandomForests)
 library(xgboost)
+library(nnet)
 ```
 
 
@@ -847,8 +848,34 @@ abline(v=best.iter)
 
 
 # Sélection des paramètres optimaux par validation croisée
-reseau_model <- neuralnet(CO2 ~ ., data = train_data, hidden = c(5, 2))
+#reseau_model <- neuralnet(CO2 ~ ., data = train_data, hidden = c(5, 2))
 
+
+# Entraînement du modèle de réseau de neurones pour la régression
+# Assurez-vous d'adapter les noms des variables et le nom de l'ensemble de données en fonction de votre cas spécifique
+
+res_neurones <- nnet(CO2 ~ ., data = train_data, size = 5, decay = 1, linout = TRUE, maxit = 500) 
+
+```
+
+```{r}
+#On optimise les paramètres avec la validation croisée
+
+plot(tune.nnet(CO2 ~ ., data = train_data, size = c(5, 10, 20), decay = c(1, 2, 3), maxit = 200, linout = TRUE))
+plot(tune.nnet(CO2 ~ ., data = train_data, size = 5:20, decay = 1:10))
+
+```
+
+
+```{r}
+#On fait un modèle avec les paramètres optimisés 
+
+res_neurones_opt=nnet(CO2~.,data=train_data,size=3,decay=2,linout=TRUE,maxit=200)
+
+#On trace les résidus 
+fit.nnetr=predict(res_neurones_opt,data=train_data)
+res.nnetr=fit.nnetr-train_data[,"CO2"]
+gplot.res(fit.nnetr,res.nnetr,titre="")
 ```
 
 
@@ -1052,16 +1079,19 @@ On voit également que c'est Electricty_from_renewables qui est la plus importan
 
 #Imputation des données manquantes par la moyenne de chaque variable
 
+#On impute que pour les variables quantitatives (ici pas de pb puisque les 2 qualitatives Year et Entity n'avaient pas de données manquantes)
+data_imputed <- data2 %>% 
+                      mutate_if(is.numeric, ~ifelse(is.na(.), mean(., na.rm = TRUE), .))
 
-#Sur les données d'entrainement 
-train_data_imputed <- train_data %>%  mutate_all(list(~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+#On enlève Electricity.from.fossil.fuels.TWh pour rester cohérent
 
+data_imputed <- subset(data_imputed, select = -c(Electricity.from.fossil.fuels..TWh.))
 
 #On vérifie qu'il n'y a plus de données manquantes
-données_manquantes_train <- colSums(is.na(train_data_imputed))
-print(données_manquantes_train)
+données_manquantes <- colSums(is.na(data_imputed))
+print(données_manquantes)
 
-fig <- plot_ly(x = names(données_manquantes_train), y = données_manquantes_train, type = "bar", 
+fig <- plot_ly(x = names(données_manquantes), y = données_manquantes, type = "bar", 
                name = "Valeurs manquantes par variables", 
                marker = list(color = "purple"),
                xlab = "Variables", ylab = "Nombre de valeurs manquantes",
@@ -1070,23 +1100,6 @@ fig <- plot_ly(x = names(données_manquantes_train), y = données_manquantes_tra
 fig
 ```
 
-```{r}
-#Pareil pour les données de test
-test_data_imputed <- test_data %>%
-  mutate_all(list(~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
 
-#On vérifie
-données_manquantes_test <- colSums(is.na(test_data_imputed))
-print(données_manquantes_test)
-
-fig <- plot_ly(x = names(données_manquantes_test), y = données_manquantes_test, type = "bar", 
-               name = "Valeurs manquantes par variables", 
-               marker = list(color = "blue"),
-               xlab = "Variables", ylab = "Nombre de valeurs manquantes",
-               title = "Valeurs manquantes par variables (Données de test)")
-
-fig
-
-```
 
 
